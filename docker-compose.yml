@@ -9,11 +9,6 @@ services:
       options:
         max-size: 10m
         max-file: "3"
-    ports:
-      - '5432:5432'
-    profiles:
-      - db
-      - debug
 
   elasticsearch:
     image: elasticsearch:8.7.1
@@ -23,35 +18,25 @@ services:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - cluster.routing.allocation.disk.threshold_enabled=false
-    ports:
-      - 9200:9200
-      - 9300:9300
     healthcheck:
       test: curl -s http://elasticsearch01:9200 >/dev/null || exit 1
       interval: 10s
       timeout: 5s
       retries: 50
       start_period: 5s
-    profiles:
-      - es
-      - debug
 
-  kibana:
-    image: kibana:8.7.1
-    ports:
-      - "5601:5601"
-    environment:
-      - ELASTICSEARCH_URL=http://elasticsearch:9200
-    depends_on:
-      - elasticsearch
-    profiles:
-      - kibana
+#  kibana:
+#    image: kibana:8.7.1
+#    ports:
+#      - "5601:5601"
+#    environment:
+#      - ELASTICSEARCH_URL=http://elasticsearch:9200
+#    depends_on:
+#      - elasticsearch
 
   redis-node-1:
     image: redis:7.2
     container_name: redis-node-1
-    ports:
-      - "7001:7000"
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
@@ -62,8 +47,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-node-2:
     image: redis:7.2
@@ -71,8 +54,6 @@ services:
     depends_on:
       redis-node-1:
         condition: service_healthy
-    ports:
-      - "7002:7000"
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
@@ -83,8 +64,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-node-3:
     image: redis:7.2
@@ -92,8 +71,6 @@ services:
     depends_on:
       redis-node-2:
         condition: service_healthy
-    ports:
-      - "7003:7000"
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
@@ -104,8 +81,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-node-4:
     image: redis:7.2
@@ -113,8 +88,6 @@ services:
     depends_on:
       redis-node-3:
         condition: service_healthy
-    ports:
-      - "7004:7000"
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
@@ -125,8 +98,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-node-5:
     image: redis:7.2
@@ -134,8 +105,6 @@ services:
     depends_on:
       redis-node-4:
         condition: service_healthy
-    ports:
-      - "7005:7000"
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
@@ -146,8 +115,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-node-6:
     image: redis:7.2
@@ -155,8 +122,6 @@ services:
     depends_on:
       redis-node-5:
         condition: service_healthy
-    ports:
-      - "7006:7000"
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
@@ -167,8 +132,6 @@ services:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
       retries: 5
-    profiles:
-      - redis
 
   redis-cluster-init:
     image: redis:7.2
@@ -188,24 +151,17 @@ services:
       redis-node-1:7000 redis-node-2:7000 redis-node-3:7000 
       redis-node-4:7000 redis-node-5:7000 redis-node-6:7000 
       --cluster-replicas 1"
-    profiles:
-      - redis
 
   redisinsight:
     image: redis/redisinsight
-    ports:
-      - '5540:5540'
-    profiles:
-      - redisinsight
 
   server:
-    image: openjdk:17
-    working_dir: /app
-    command: sh -c 'scripts/generate-properties.sh --docker && ./gradlew assemble && ./gradlew runServer'
-    volumes:
-      - ./server:/app
+    build:
+      context: ./server
+    env_file:
+      - .env
     ports:
-      - 8080:8080
+      - "8080:8080"
     depends_on:
       - postgres
       - elasticsearch
@@ -215,34 +171,20 @@ services:
       timeout: 5s
       retries: 50
       start_period: 5s
-    profiles:
-      - openvsx
-      - backend
     
   webui:
-    image: node:18
-    working_dir: /app
-    command: sh -c 'yarn && yarn build && yarn build:default && yarn watch & yarn watch:default & yarn start:default'
-    volumes:
-      - ./webui:/app
+    build:
+      context: ./webui
     ports:
-      - 3000:3000
+      - "3000:3000"
     depends_on:
       - server
-    profiles:
-      - openvsx
-      - frontend
 
   cli:
-    image: node:18
-    working_dir: /app
-    command: sh -c 'yarn && yarn watch'
-    volumes:
-      - ./cli:/app
+    build:
+      context: ./cli
+    command: ["--help"]
+    env_file:
+      - .env
     depends_on:
       - server
-    environment:
-      - OVSX_REGISTRY_URL=http://server:8080
-    profiles:
-      - openvsx
-      - commandline

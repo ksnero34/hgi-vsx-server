@@ -9,9 +9,13 @@
  ********************************************************************************/
 package org.eclipse.openvsx.security;
 
-import org.springframework.boot.context.properties.ConfigurationProperties;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
-import java.util.*;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 
 /**
  * Configuration example:
@@ -30,7 +34,8 @@ import java.util.*;
 @ConfigurationProperties(prefix = "ovsx.oauth2")
 public record OAuth2AttributesConfig(Map<String, OAuth2AttributesMapping> attributeNames) {
     private static final Map<String, OAuth2AttributesMapping> DEFAULT_MAPPINGS = Map.of(
-            "github", new OAuth2AttributesMapping("avatar_url", "email", "name", "login", "html_url")
+            "github", new OAuth2AttributesMapping("avatar_url", "email", "name", "login", "html_url"),
+            "custom", new OAuth2AttributesMapping("picture", "email", "name", "given_name", "iss")
     );
 
     public OAuth2AttributesMapping getAttributeMapping(String provider) {
@@ -38,11 +43,11 @@ public record OAuth2AttributesConfig(Map<String, OAuth2AttributesMapping> attrib
     }
 
     public List<String> getProviders() {
-        var providers = new ArrayList<>(DEFAULT_MAPPINGS.keySet());
+        var providers = new LinkedHashSet<>(DEFAULT_MAPPINGS.keySet());
         if(attributeNames != null) {
             providers.addAll(attributeNames.keySet());
         }
 
-        return providers;
+        return new ArrayList<>(providers);
     }
 }
