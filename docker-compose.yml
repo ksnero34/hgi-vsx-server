@@ -5,6 +5,10 @@ services:
     environment:
       - POSTGRES_USER=openvsx
       - POSTGRES_PASSWORD=openvsx
+    networks:
+      dev_env:
+        aliases:
+          - vsxpostgres
     logging:
       options:
         max-size: 10m
@@ -18,8 +22,11 @@ services:
       - discovery.type=single-node
       - bootstrap.memory_lock=true
       - cluster.routing.allocation.disk.threshold_enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    networks:
+      - dev_env
     healthcheck:
-      test: curl -s http://elasticsearch01:9200 >/dev/null || exit 1
+      test: curl -s http://elasticsearch:9200 >/dev/null || exit 1
       interval: 10s
       timeout: 5s
       retries: 50
@@ -40,9 +47,11 @@ services:
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
-      - /redis/node-1:/data
+      - ./data/redis/node-1:/data
     environment:
       - REDISCLI_AUTH=openvsx
+    networks:
+      - dev_env
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
@@ -57,9 +66,11 @@ services:
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
-      - /redis/node-2:/data
+      - ./data/redis/node-2:/data
     environment:
       - REDISCLI_AUTH=openvsx
+    networks:
+      - dev_env
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
@@ -74,9 +85,11 @@ services:
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
-      - /redis/node-3:/data
+      - ./data/redis/node-3:/data
     environment:
       - REDISCLI_AUTH=openvsx
+    networks:
+      - dev_env
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
@@ -91,9 +104,11 @@ services:
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
-      - /redis/node-4:/data
+      - ./data/redis/node-4:/data
     environment:
       - REDISCLI_AUTH=openvsx
+    networks:
+      - dev_env
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
@@ -108,9 +123,11 @@ services:
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
-      - /redis/node-5:/data
+      - ./data/redis/node-5:/data
     environment:
       - REDISCLI_AUTH=openvsx
+    networks:
+      - dev_env
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
@@ -125,9 +142,11 @@ services:
     command: redis-server /etc/redis.conf
     volumes:
       - ./redis.conf:/etc/redis.conf
-      - /redis/node-6:/data
+      - ./data/redis/node-6:/data
     environment:
       - REDISCLI_AUTH=openvsx
+    networks:
+      - dev_env
     healthcheck:
       test: ["CMD", "redis-cli", "-p", "7000", "--user", "openvsx", "ping"]
       interval: 5s
@@ -144,6 +163,8 @@ services:
       - redis-node-6
     environment:
       - REDISCLI_AUTH=openvsx
+    networks:
+      - dev_env
     entrypoint: >
       bash -c "
       sleep 10;
@@ -154,17 +175,23 @@ services:
 
   redisinsight:
     image: redis/redisinsight
+    networks:
+      - dev_env
 
   server:
     build:
       context: ./server
     env_file:
       - .env
-    ports:
-      - "8080:8080"
+    volumes:
+      - ./data/openvsx-storage:/var/openvsx/storage
     depends_on:
-      - postgres
-      - elasticsearch
+      postgres:
+        condition: service_started
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - dev_env
     healthcheck:
       test: "curl --fail --silent localhost:8081/actuator/health | grep UP || exit 1"
       interval: 10s
@@ -175,10 +202,26 @@ services:
   webui:
     build:
       context: ./webui
-    ports:
-      - "3000:3000"
+    networks:
+      - dev_env
     depends_on:
       - server
+
+  proxy:
+    image: nginx:1.27-alpine
+    depends_on:
+      - server
+      - webui
+    ports:
+      - "28080:80"
+      - "28443:443"
+    volumes:
+      - ./deploy/docker/proxy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./deploy/docker/proxy/ssl:/etc/nginx/ssl:ro
+    networks:
+      dev_env:
+        aliases:
+          - vsx.hgi.com
 
   cli:
     build:
@@ -188,3 +231,8 @@ services:
       - .env
     depends_on:
       - server
+    networks:
+      - dev_env
+networks:
+  dev_env:
+    external: true

@@ -9,6 +9,9 @@
  * ****************************************************************************** */
 package org.eclipse.openvsx.security;
 
+import java.net.URI;
+import java.net.URL;
+
 import org.eclipse.openvsx.entities.UserData;
 import org.springframework.security.oauth2.core.user.OAuth2User;
 
@@ -37,7 +40,19 @@ public record OAuth2AttributesMapping(
         return userData;
     }
 
+    @SuppressWarnings("unchecked")
     private <T> T getAttribute(OAuth2User oauth2User, String attribute) {
-        return attribute == null ? null : oauth2User.getAttribute(attribute);
+        if (attribute == null) {
+            return null;
+        }
+        Object value = oauth2User.getAttribute(attribute);
+        if (value instanceof URL url) {
+            value = url.toString();
+        } else if (value instanceof URI uri) {
+            value = uri.toString();
+        } else if (value != null && !(value instanceof String)) {
+            value = value.toString();
+        }
+        return (T) value;
     }
 }

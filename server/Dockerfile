@@ -24,6 +24,7 @@ RUN apt-get update \
 # Create user openvsx and set up home directory
 RUN groupadd -r openvsx && useradd --no-log-init -r -g openvsx openvsx
 RUN mkdir -p /home/openvsx/server && chown -R openvsx:openvsx /home/openvsx
+RUN mkdir -p /var/openvsx/storage && chown -R openvsx:openvsx /var/openvsx
 USER openvsx
 WORKDIR /home/openvsx/server
 

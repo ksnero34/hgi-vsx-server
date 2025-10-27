@@ -110,6 +110,15 @@ public class OAuth2UserServices {
                 ? springOidcUserService.loadUser(oidcRequest)
                 : springOAuth2UserService.loadUser(userRequest);
 
+        // DEBUG: Log all available attributes
+        System.out.println("=== DEBUG: OAuth2 User Attributes for " + registrationId + " ===");
+        System.out.println("Available attributes: " + oauth2User.getAttributes().keySet());
+        oauth2User.getAttributes().forEach((key, value) ->
+            System.out.println("  " + key + " = " + value)
+        );
+        System.out.println("Mapping config: " + mapping);
+        System.out.println("=== END DEBUG ===");
+
         var userAttributes = mapping.toUserData(registrationId, oauth2User);
         if (StringUtils.isEmpty(userAttributes.getLoginName())) {
             throw new CodedAuthException("Invalid login: missing 'login' field.", INVALID_USER);

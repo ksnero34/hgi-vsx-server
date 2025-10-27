@@ -1,0 +1,14 @@
+# Test Extension List
+# 테스트용 extension 목록 (적은 수로 빠른 테스트)
+
+# Latest version
+ms-vscode-remote.remote-wsl
+PKief.material-icon-theme
+rust-lang.rust-analyzer
+openai.chatgpt
+
+# Specific version
+formulahendry.code-runner@0.12.1
+
+# With platform (if needed)
+# golang.go@@linux-x64

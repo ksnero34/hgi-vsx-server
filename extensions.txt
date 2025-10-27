@@ -1,0 +1,50 @@
+# VSCode Extensions to Download
+#
+# Format: publisher.extension-name[@version][@target-platform]
+# Lines starting with # are comments
+#
+# Examples:
+#   ms-python.python                    # Latest version
+#   ms-python.python@2024.0.0           # Specific version
+#   ms-python.python@latest             # Explicitly request latest
+#   ms-python.python@2024.0.0@linux-x64 # Specific version and platform
+#   ms-python.python@@linux-x64         # Latest version for specific platform
+#
+# Valid target platforms: win32-x64, linux-x64, darwin-x64, darwin-arm64, etc.
+
+# Popular extensions
+ms-python.python@2024.0.0
+ms-python.vscode-pylance
+dbaeumer.vscode-eslint@2.4.4
+esbenp.prettier-vscode
+formulahendry.code-runner@0.12.1
+
+# Language support
+golang.go
+rust-lang.rust-analyzer
+redhat.java
+vscjava.vscode-java-pack
+
+# Git and version control
+eamodio.gitlens@14.7.0
+mhutchie.git-graph
+
+# Themes and UI
+pkief.material-icon-theme
+zhuangtongfa.material-theme
+
+# Docker and Kubernetes
+ms-azuretools.vscode-docker
+ms-kubernetes-tools.vscode-kubernetes-tools
+
+# Markdown and documentation
+yzhang.markdown-all-in-one@3.6.2
+shd101wyy.markdown-preview-enhanced
+
+# Database
+mtxr.sqltools
+cweijan.vscode-database-client2
+
+# Add more extensions as needed...
+# Find extension IDs at https://marketplace.visualstudio.com/vscode
+# or https://open-vsx.org/

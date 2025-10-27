@@ -1,0 +1,70 @@
+server:
+  forward-headers-strategy: framework
+
+logging:
+  level:
+    org.springframework.security: DEBUG
+    org.eclipse.openvsx.security: DEBUG
+
+spring:
+  autoconfigure:
+    exclude: org.jobrunr.spring.autoconfigure.storage.JobRunrElasticSearchStorageAutoConfiguration
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://postgres:5432/postgres}
+    username: ${SPRING_DATASOURCE_USERNAME:openvsx}
+    password: ${SPRING_DATASOURCE_PASSWORD:openvsx}
+  security:
+    oauth2:
+      client:
+        registration:
+          github:
+            client-id: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_ID:none}
+            client-secret: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_CLIENT_SECRET:none}
+            authorization-grant-type: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_AUTHORIZATION_GRANT_TYPE:authorization_code}
+            redirect-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_REDIRECT_URI:${PUBLIC_BASE_URL:http://localhost:8080}/login/oauth2/code/github}
+            scope: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_GITHUB_SCOPE:read:user,user:email}
+          eclipse:
+            client-id: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ECLIPSE_CLIENT_ID:none}
+            client-secret: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ECLIPSE_CLIENT_SECRET:none}
+            authorization-grant-type: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ECLIPSE_AUTHORIZATION_GRANT_TYPE:authorization_code}
+            redirect-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ECLIPSE_REDIRECT_URI:${PUBLIC_BASE_URL:http://localhost:8080}/login/oauth2/code/eclipse}
+            scope: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_ECLIPSE_SCOPE:openvsx_publisher_agreement,profile}
+          custom:
+            client-id: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_CUSTOM_CLIENT_ID}
+            client-secret: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_CUSTOM_CLIENT_SECRET}
+            client-name: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_CUSTOM_CLIENT_NAME:Custom}
+            authorization-grant-type: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_CUSTOM_AUTHORIZATION_GRANT_TYPE:authorization_code}
+            redirect-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_CUSTOM_REDIRECT_URI:${PUBLIC_BASE_URL:http://localhost:8080}/login/oauth2/code/custom}
+            scope: ${SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_CUSTOM_SCOPE:openid,profile,email}
+            provider: custom
+        provider:
+          github:
+            authorization-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_AUTHORIZATION_URI:https://github.com/login/oauth/authorize}
+            token-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_TOKEN_URI:https://github.com/login/oauth/access_token}
+            user-info-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_USER_INFO_URI:https://api.github.com/user}
+            user-name-attribute: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_GITHUB_USER_NAME_ATTRIBUTE:login}
+          eclipse:
+            authorization-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ECLIPSE_AUTHORIZATION_URI:https://accounts.eclipse.org/oauth2/authorize}
+            token-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ECLIPSE_TOKEN_URI:https://accounts.eclipse.org/oauth2/token}
+            user-info-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ECLIPSE_USER_INFO_URI:https://accounts.eclipse.org/oauth2/UserInfo}
+            user-name-attribute: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ECLIPSE_USER_NAME_ATTRIBUTE:name}
+            user-info-authentication-method: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_ECLIPSE_USER_INFO_AUTHENTICATION_METHOD:header}
+          custom:
+            issuer-uri: ${SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_CUSTOM_ISSUER_URI}
+
+ovsx:
+  webui:
+    url: ${PUBLIC_BASE_URL:http://localhost:8080}
+  elasticsearch:
+    host: ${OVSX_ELASTICSEARCH_HOST:elasticsearch:9200}
+  storage:
+    local:
+      directory: ${OVSX_STORAGE_DIR:/var/openvsx/storage}
+  oauth2:
+    attribute-names:
+      custom:
+        avatar-url: ${OVSX_OAUTH2_ATTRIBUTE_NAMES_CUSTOM_AVATAR_URL:picture}
+        email: ${OVSX_OAUTH2_ATTRIBUTE_NAMES_CUSTOM_EMAIL:email}
+        full-name: ${OVSX_OAUTH2_ATTRIBUTE_NAMES_CUSTOM_FULL_NAME:name}
+        login-name: ${OVSX_OAUTH2_ATTRIBUTE_NAMES_CUSTOM_LOGIN_NAME:preferred_username}
+        provider-url: ${OVSX_OAUTH2_ATTRIBUTE_NAMES_CUSTOM_PROVIDER_URL:profile}

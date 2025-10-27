@@ -35,7 +35,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record OAuth2AttributesConfig(Map<String, OAuth2AttributesMapping> attributeNames) {
     private static final Map<String, OAuth2AttributesMapping> DEFAULT_MAPPINGS = Map.of(
             "github", new OAuth2AttributesMapping("avatar_url", "email", "name", "login", "html_url"),
-            "custom", new OAuth2AttributesMapping("picture", "email", "name", "given_name", "iss")
+            "custom", new OAuth2AttributesMapping("picture", "email", "name", "preferred_username", "profile")
     );
 
     public OAuth2AttributesMapping getAttributeMapping(String provider) {
