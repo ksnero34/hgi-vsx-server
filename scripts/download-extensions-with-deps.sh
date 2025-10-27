@@ -119,38 +119,42 @@ extract_dependencies() {
 find_stable_version_vscode() {
     local ext_id="$1"
 
-    # Request with flags to get version history
-    # flags: 0x200 (IncludeVersions) + 0x80 (IncludeFiles) + 0x1 (IncludeVersionProperties) = 641
-    local query_result=$(curl -s -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
-      -H 'Content-Type: application/json' \
-      -H 'Accept: application/json;api-version=7.1-preview.1' \
-      -d "{
-        \"filters\": [{
-          \"criteria\": [{\"filterType\": 7, \"value\": \"$ext_id\"}],
-          \"pageSize\": 100
-        }],
-        \"flags\": 2151
-      }" 2>/dev/null)
+    # VS Marketplace API only returns versions in small batches
+    # We'll check multiple pages to find stable version
+    local max_attempts=5  # Check up to 5 pages (roughly 50+ versions)
 
-    # Check if we got results
-    if [ -z "$query_result" ] || [ "$(echo "$query_result" | jq '.results[0].extensions[0].versions' 2>/dev/null)" = "null" ]; then
-        return 1
-    fi
+    for page in $(seq 1 $max_attempts); do
+        local query_result=$(curl -s -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
+          -H 'Content-Type: application/json' \
+          -H 'Accept: application/json;api-version=3.0-preview.1' \
+          -d "{
+            \"filters\": [{
+              \"criteria\": [{\"filterType\": 7, \"value\": \"$ext_id\"}],
+              \"pageNumber\": $page,
+              \"pageSize\": 50
+            }],
+            \"flags\": 914
+          }" 2>/dev/null)
 
-    # Find first version without PreRelease property set to true
-    # Check up to first 100 versions
-    local stable_ver=$(echo "$query_result" | jq -r '
-        .results[0].extensions[0].versions[0:100] | .[] |
-        select(
-          [.properties[]? | select(.key == "Microsoft.VisualStudio.Code.PreRelease" and .value == "true")] | length == 0
-        ) |
-        .version
-    ' 2>/dev/null | head -1)
+        # Check if we got results
+        if [ -z "$query_result" ]; then
+            continue
+        fi
 
-    if [ -n "$stable_ver" ] && [ "$stable_ver" != "null" ]; then
-        echo "$stable_ver"
-        return 0
-    fi
+        # Find first version without PreRelease property set to true
+        local stable_ver=$(echo "$query_result" | jq -r '
+            .results[0].extensions[0].versions[]? |
+            select(
+              [.properties[]? | select(.key == "Microsoft.VisualStudio.Code.PreRelease" and .value == "true")] | length == 0
+            ) |
+            .version
+        ' 2>/dev/null | head -1)
+
+        if [ -n "$stable_ver" ] && [ "$stable_ver" != "null" ]; then
+            echo "$stable_ver"
+            return 0
+        fi
+    done
 
     return 1
 }
@@ -451,8 +455,37 @@ download_single_version() {
             # Try to download metadata from Open VSX or VS Marketplace API
             local metadata_file="$EXT_DIR/metadata.json"
             if ! ovsx get $extension $([ "$download_version" != "latest" ] && echo "-v $download_version") --metadata -o "$metadata_file" 2>/dev/null; then
-                # Create basic metadata from VS Marketplace info
-                echo "{\"namespace\":\"$PUBLISHER\",\"name\":\"$NAME\",\"version\":\"$download_version\",\"preRelease\":false}" > "$metadata_file"
+                # Get detailed metadata from VS Marketplace API
+                local vs_metadata=$(curl -s -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
+                  -H 'Content-Type: application/json' \
+                  -H 'Accept: application/json;api-version=3.0-preview.1' \
+                  -d "{
+                    \"filters\": [{
+                      \"criteria\": [{\"filterType\": 7, \"value\": \"$extension\"}],
+                      \"pageSize\": 1
+                    }],
+                    \"flags\": 914
+                  }" 2>/dev/null)
+
+                # Extract dependencies and other info
+                local ext_deps=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].properties[]? | select(.key == "Microsoft.VisualStudio.Code.ExtensionDependencies") | .value' 2>/dev/null || echo "")
+                local ext_pack=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].properties[]? | select(.key == "Microsoft.VisualStudio.Code.ExtensionPack") | .value' 2>/dev/null || echo "")
+                local display_name=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].displayName // ""' 2>/dev/null || echo "")
+                local description=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].shortDescription // ""' 2>/dev/null || echo "")
+
+                # Create metadata JSON with dependencies
+                cat > "$metadata_file" <<EOF
+{
+  "namespace": "$PUBLISHER",
+  "name": "$NAME",
+  "version": "$download_version",
+  "displayName": "$display_name",
+  "description": "$description",
+  "preRelease": false,
+  "extensionDependencies": $(echo "$ext_deps" | jq -R 'split(",") | map(select(. != ""))' 2>/dev/null || echo "[]"),
+  "extensionPack": $(echo "$ext_pack" | jq -R 'split(",") | map(select(. != ""))' 2>/dev/null || echo "[]")
+}
+EOF
             fi
 
             echo -e "    ${GREEN}✓ Downloaded stable from VS Marketplace ($file_size)${NC}"
