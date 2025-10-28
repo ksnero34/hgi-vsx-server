@@ -77,18 +77,59 @@ SKIPPED=0
 echo "Scanning for extensions..."
 echo ""
 
-# Find all .vsix files
+# Build a list of unique extension versions to upload
+# Group by publisher/extension/version/release-type and prefer universal over platform-specific
+declare -A extension_files
+
 while IFS= read -r vsix_file; do
+    # Extract extension info from path
+    RELATIVE_PATH="${vsix_file#$EXTENSIONS_DIR/}"
+    PUBLISHER=$(echo "$RELATIVE_PATH" | cut -d'/' -f1)
+    EXTENSION=$(echo "$RELATIVE_PATH" | cut -d'/' -f2)
+
+    # Determine version and release type from path
+    # Path patterns:
+    # extensions/publisher/extension/version/stable/file.vsix (universal)
+    # extensions/publisher/extension/version/platform/stable/file.vsix (platform-specific)
+    # extensions/publisher/extension/stable/file.vsix (universal, latest)
+    # extensions/publisher/extension/platform/stable/file.vsix (platform-specific, latest)
+
+    FILENAME=$(basename "$vsix_file")
+    DIR_PATH=$(dirname "$vsix_file")
+    RELEASE_TYPE=$(basename "$DIR_PATH")  # stable or pre-release
+
+    # Check if this is platform-specific or universal
+    PARENT_DIR=$(dirname "$DIR_PATH")
+    PARENT_NAME=$(basename "$PARENT_DIR")
+
+    if [[ "$PARENT_NAME" =~ ^(linux-x64|win32-x64|darwin-x64|alpine-x64|web)$ ]]; then
+        # Platform-specific
+        PLATFORM="$PARENT_NAME"
+        VERSION_DIR=$(dirname "$PARENT_DIR")
+    else
+        # Universal
+        PLATFORM="universal"
+        VERSION_DIR="$PARENT_DIR"
+    fi
+
+    # Create unique key for this extension version
+    KEY="$PUBLISHER/$EXTENSION/$VERSION_DIR/$RELEASE_TYPE"
+
+    # Prefer universal over platform-specific
+    if [ -z "${extension_files[$KEY]}" ] || [ "$PLATFORM" = "universal" ]; then
+        extension_files[$KEY]="$vsix_file|$PUBLISHER|$EXTENSION|$PLATFORM"
+    fi
+done < <(find "$EXTENSIONS_DIR" -name "*.vsix" -type f | sort)
+
+# Now publish the selected extensions
+for KEY in "${!extension_files[@]}"; do
     TOTAL=$((TOTAL + 1))
 
-    # Extract extension info from path
-    # Expected path: extensions/publisher/extension-name/file.vsix
-    DIR_PATH=$(dirname "$vsix_file")
-    PUBLISHER=$(basename "$(dirname "$DIR_PATH")")
-    EXTENSION=$(basename "$DIR_PATH")
+    IFS='|' read -r vsix_file PUBLISHER EXTENSION PLATFORM <<< "${extension_files[$KEY]}"
 
     echo -e "${BLUE}[$TOTAL] Processing: $PUBLISHER.$EXTENSION${NC}"
     echo "  File: $(basename "$vsix_file")"
+    echo "  Type: $PLATFORM"
 
     # Create namespace if it doesn't exist
     echo "  Checking namespace: $PUBLISHER"
@@ -100,26 +141,37 @@ while IFS= read -r vsix_file; do
 
     # Publish extension
     echo "  Publishing extension..."
-    if ovsx publish "$vsix_file" -p "$PAT" -r "$REGISTRY_URL" --skip-duplicate 2>&1 | tee /tmp/publish_output.txt; then
-        if grep -q "already published" /tmp/publish_output.txt; then
-            echo -e "  ${YELLOW}⊘ Already published (skipped)${NC}"
-            SKIPPED=$((SKIPPED + 1))
-        else
-            echo -e "  ${GREEN}✓ Successfully published${NC}"
-            SUCCESS=$((SUCCESS + 1))
-        fi
-    else
+    ovsx publish "$vsix_file" -p "$PAT" -r "$REGISTRY_URL" --skip-duplicate 2>&1 | tee /tmp/publish_output.txt
+    EXIT_CODE=${PIPESTATUS[0]}
+
+    if grep -q "Unknown publisher\|ERROR\|Failed" /tmp/publish_output.txt; then
         echo -e "  ${RED}✗ Failed to publish${NC}"
         FAILED=$((FAILED + 1))
 
         # Log error
+        DIR_PATH=$(dirname "$vsix_file")
         ERROR_LOG="$DIR_PATH/upload-error.log"
         echo "Failed at $(date)" >> "$ERROR_LOG"
+        cat /tmp/publish_output.txt >> "$ERROR_LOG" 2>&1 || true
+    elif grep -q "already published" /tmp/publish_output.txt; then
+        echo -e "  ${YELLOW}⊘ Already published (skipped)${NC}"
+        SKIPPED=$((SKIPPED + 1))
+    elif grep -q "Published\|🚀" /tmp/publish_output.txt && [ $EXIT_CODE -eq 0 ]; then
+        echo -e "  ${GREEN}✓ Successfully published${NC}"
+        SUCCESS=$((SUCCESS + 1))
+    else
+        echo -e "  ${YELLOW}? Unknown result${NC}"
+        FAILED=$((FAILED + 1))
+
+        # Log error
+        DIR_PATH=$(dirname "$vsix_file")
+        ERROR_LOG="$DIR_PATH/upload-error.log"
+        echo "Unknown result at $(date)" >> "$ERROR_LOG"
         cat /tmp/publish_output.txt >> "$ERROR_LOG" 2>&1 || true
     fi
 
     echo ""
-done < <(find "$EXTENSIONS_DIR" -name "*.vsix" -type f)
+done
 
 # Summary
 echo "=================================================="

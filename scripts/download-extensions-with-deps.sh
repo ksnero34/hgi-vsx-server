@@ -244,6 +244,10 @@ download_extension() {
         platforms=("" "linux-x64" "win32-x64")
     fi
 
+    # Pre-search for stable version once (shared across all platforms)
+    local stable_version_found=""
+    local stable_version_checked=false
+
     # Download versions based on request
     local stable_downloaded=false
     local prerelease_downloaded=false
@@ -253,29 +257,66 @@ download_extension() {
         local platform_label=""
         [ -n "$platform" ] && platform_label=" ($platform)"
 
-        if [ "$download_prerelease" = "true" ]; then
-            # When pre-release is requested, download both pre-release and stable
-            echo -e "  ${CYAN}→ Downloading pre-release version${platform_label}...${NC}"
-            if download_single_version "$extension" "$version" "$platform" "true"; then
-                prerelease_downloaded=true
+        # Try stable version first (skip if already failed on first platform)
+        if [ "$stable_version_checked" = "false" ] || [ -n "$stable_version_found" ]; then
+            echo -e "  ${CYAN}→ Downloading${platform_label}...${NC}"
+            if download_single_version "$extension" "$version" "$platform" "false" "$stable_version_checked" "$stable_version_found"; then
+                stable_downloaded=true
                 any_success=true
-            fi
 
-            # Also download stable version
-            echo -e "  ${CYAN}→ Downloading stable version${platform_label}...${NC}"
-            if download_single_version "$extension" "$version" "$platform" "false"; then
-                stable_downloaded=true
-                any_success=true
-            fi
-        else
-            # Only download stable version
-            echo -e "  ${CYAN}→ Downloading stable version${platform_label}...${NC}"
-            if download_single_version "$extension" "$version" "$platform" "false"; then
-                stable_downloaded=true
-                any_success=true
+                # Cache the result after first attempt
+                if [ "$stable_version_checked" = "false" ]; then
+                    stable_version_checked=true
+                    local meta_file="$DOWNLOAD_DIR/$PUBLISHER/$NAME"
+                    [ "$version" != "latest" ] && meta_file="$meta_file/$version"
+                    [ -n "$platform" ] && meta_file="$meta_file/$platform"
+                    meta_file="$meta_file/stable/metadata.json"
+                    if [ -f "$meta_file" ]; then
+                        stable_version_found=$(jq -r '.version // ""' "$meta_file" 2>/dev/null || echo "")
+                    fi
+                fi
+            elif [ "$stable_version_checked" = "false" ]; then
+                stable_version_checked=true
             fi
         fi
     done
+
+    # Check if we should also download latest (pre-release) version
+    local should_download_latest=false
+    if [ "$stable_downloaded" = "false" ] && [ "$stable_version_checked" = "true" ] && [ -z "$stable_version_found" ]; then
+        # No stable version exists at all
+        echo -e "  ${YELLOW}→ No stable version available, downloading latest version...${NC}"
+        should_download_latest=true
+    elif [ "$stable_downloaded" = "true" ] && [ -n "$stable_version_found" ]; then
+        # We downloaded a stable version, check if there's a newer pre-release
+        # Get the actual latest version number
+        local latest_version=$(curl -s "https://marketplace.visualstudio.com/items?itemName=$extension" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4 2>/dev/null || echo "")
+        if [ -z "$latest_version" ]; then
+            # Try API approach
+            latest_version=$(curl -s -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
+              -H 'Content-Type: application/json' \
+              -H 'Accept: application/json;api-version=3.0-preview.1' \
+              -d "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"$extension\"}],\"pageSize\":1}],\"flags\":914}" 2>/dev/null | \
+              jq -r '.results[0].extensions[0].versions[0].version' 2>/dev/null || echo "")
+        fi
+
+        if [ -n "$latest_version" ] && [ "$latest_version" != "$stable_version_found" ]; then
+            echo -e "  ${BLUE}→ Found newer pre-release version: $latest_version (stable: $stable_version_found)${NC}"
+            should_download_latest=true
+        fi
+    fi
+
+    if [ "$should_download_latest" = "true" ]; then
+        for platform in "${platforms[@]}"; do
+            local platform_label=""
+            [ -n "$platform" ] && platform_label=" ($platform)"
+
+            echo -e "  ${CYAN}→ Downloading latest${platform_label}...${NC}"
+            if download_single_version "$extension" "$version" "$platform" "true" "true" ""; then
+                any_success=true
+            fi
+        done
+    fi
 
     if [ "$any_success" = "false" ]; then
         FAILED=$((FAILED + 1))
@@ -342,6 +383,8 @@ download_single_version() {
     local version="$2"
     local target="$3"
     local prerelease="$4"
+    local stable_checked="${5:-false}"  # Has stable version search been done?
+    local stable_found="${6:-}"          # Cached stable version result
 
     local PUBLISHER=$(echo "$extension" | cut -d'.' -f1)
     local NAME=$(echo "$extension" | cut -d'.' -f2-)
@@ -360,36 +403,164 @@ download_single_version() {
 
     mkdir -p "$EXT_DIR"
 
-    # For stable versions, find the latest stable version explicitly
+    # Determine download version based on whether we want stable or pre-release
     local download_version="$version"
-    if [ "$prerelease" = "false" ] && [ "$version" = "latest" ]; then
-        echo -e "    ${CYAN}Searching for stable version...${NC}"
+    if [ "$version" = "latest" ]; then
+        if [ "$prerelease" = "false" ]; then
+            # For stable versions, find the latest stable version explicitly
+            # Use cached stable version search result if available
+            if [ "$stable_checked" = "true" ]; then
+                if [ -n "$stable_found" ]; then
+                    download_version="$stable_found"
+                else
+                    # Already checked and no stable version found
+                    return 1
+                fi
+            else
+                # First time checking - do the search
+                echo -e "    ${CYAN}Searching for stable version...${NC}"
 
-        # Try VS Marketplace first (faster)
-        local stable_ver=$(find_stable_version_vscode "$extension")
+                # Try VS Marketplace first (faster)
+                local stable_ver=$(find_stable_version_vscode "$extension")
 
-        # If not found in VS Marketplace and not an MS extension, try Open VSX
-        if [ -z "$stable_ver" ] && [[ ! "$extension" =~ ^ms- ]]; then
-            stable_ver=$(find_stable_version_openvsx "$extension")
-        fi
+                # If not found in VS Marketplace and not an MS extension, try Open VSX
+                if [ -z "$stable_ver" ] && [[ ! "$extension" =~ ^ms- ]]; then
+                    stable_ver=$(find_stable_version_openvsx "$extension")
+                fi
 
-        if [ -n "$stable_ver" ]; then
-            download_version="$stable_ver"
-            echo -e "    ${BLUE}Found stable version: $stable_ver${NC}"
+                if [ -n "$stable_ver" ]; then
+                    download_version="$stable_ver"
+                    echo -e "    ${BLUE}Found stable version: $stable_ver${NC}"
+                else
+                    echo -e "    ${YELLOW}No stable version found, skipping stable download${NC}"
+                    return 1
+                fi
+            fi
         else
-            echo -e "    ${YELLOW}No stable version found, skipping stable download${NC}"
-            return 1
+            # For pre-release, just use "latest" which downloads the most recent version
+            download_version="latest"
         fi
     fi
 
-    # Build ovsx command arguments
-    local OVSX_CMD="ovsx get $extension"
-    [ "$download_version" != "latest" ] && OVSX_CMD="$OVSX_CMD -v $download_version"
-    [ -n "$target" ] && OVSX_CMD="$OVSX_CMD -t $target"
-    [ "$prerelease" = "true" ] && OVSX_CMD="$OVSX_CMD --pre-release"
+    local downloaded_from_vs=false
 
-    # Try downloading from Open VSX (download directly to target directory)
-    if (cd "$EXT_DIR" && eval $OVSX_CMD 2>&1 | grep -E "Downloading|Downloaded" || true); then
+    # Try VS Marketplace first (more reliable and up-to-date)
+    local VERSION_PATH="${download_version}"
+    [ "$VERSION_PATH" = "latest" ] && VERSION_PATH="latest"
+
+    local VSIX_URL="https://${PUBLISHER}.gallery.vsassets.io/_apis/public/gallery/publisher/${PUBLISHER}/extension/${NAME}/${VERSION_PATH}/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage"
+
+    local OUTPUT_FILE="$EXT_DIR/${extension}"
+    [ "$download_version" != "latest" ] && OUTPUT_FILE="${OUTPUT_FILE}-${download_version}"
+    [ -n "$target" ] && OUTPUT_FILE="${OUTPUT_FILE}@${target}"
+    OUTPUT_FILE="${OUTPUT_FILE}.vsix"
+
+    echo -e "    ${CYAN}Downloading from VS Marketplace...${NC}"
+    if curl -# -L -f "$VSIX_URL" -o "$OUTPUT_FILE"; then
+        downloaded_from_vs=true
+        local file_size=$(du -h "$OUTPUT_FILE" | cut -f1)
+
+            # Try to download metadata from Open VSX or VS Marketplace API
+            local metadata_file="$EXT_DIR/metadata.json"
+            if ! ovsx get $extension $([ "$download_version" != "latest" ] && echo "-v $download_version") --metadata -o "$metadata_file" 2>/dev/null; then
+                # Get detailed metadata from VS Marketplace API with comprehensive flags
+                # flags: 950 = 1+2+4+16+128+256+512 (versions+files+categories+properties+assetUri+statistics+latestOnly)
+                local vs_metadata=$(curl -s -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
+                  -H 'Content-Type: application/json' \
+                  -H 'Accept: application/json;api-version=3.0-preview.1' \
+                  -d "{
+                    \"filters\": [{
+                      \"criteria\": [{\"filterType\": 7, \"value\": \"$extension\"}],
+                      \"pageSize\": 1
+                    }],
+                    \"flags\": 950
+                  }" 2>/dev/null)
+
+                # Extract extension info
+                local display_name=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].displayName // ""' 2>/dev/null || echo "")
+                local description=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].shortDescription // ""' 2>/dev/null || echo "")
+                local publisher_id=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].publisher.publisherId // ""' 2>/dev/null || echo "")
+                local publisher_display=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].publisher.displayName // ""' 2>/dev/null || echo "")
+                local publisher_verified=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].publisher.flags // ""' 2>/dev/null | grep -q "verified" && echo "true" || echo "false")
+                local publisher_domain=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].publisher.domain // ""' 2>/dev/null || echo "")
+                local categories=$(echo "$vs_metadata" | jq -c '.results[0].extensions[0].categories // []' 2>/dev/null || echo "[]")
+                local tags=$(echo "$vs_metadata" | jq -c '.results[0].extensions[0].tags // []' 2>/dev/null || echo "[]")
+                local published_date=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].publishedDate // ""' 2>/dev/null || echo "")
+                local last_updated=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].lastUpdated // ""' 2>/dev/null || echo "")
+
+                # Extract version properties
+                local ext_deps=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].properties[]? | select(.key == "Microsoft.VisualStudio.Code.ExtensionDependencies") | .value' 2>/dev/null || echo "")
+                local ext_pack=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].properties[]? | select(.key == "Microsoft.VisualStudio.Code.ExtensionPack") | .value' 2>/dev/null || echo "")
+                local engine=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].properties[]? | select(.key == "Microsoft.VisualStudio.Code.Engine") | .value' 2>/dev/null || echo "")
+
+                # Extract file URLs
+                local icon_url=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].files[]? | select(.assetType == "Microsoft.VisualStudio.Services.Icons.Default") | .source' 2>/dev/null || echo "")
+                local readme_url=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].files[]? | select(.assetType == "Microsoft.VisualStudio.Services.Content.Details") | .source' 2>/dev/null || echo "")
+                local changelog_url=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].files[]? | select(.assetType == "Microsoft.VisualStudio.Services.Content.Changelog") | .source' 2>/dev/null || echo "")
+                local license_url=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].files[]? | select(.assetType == "Microsoft.VisualStudio.Services.Content.License") | .source' 2>/dev/null || echo "")
+                local manifest_url=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].files[]? | select(.assetType == "Microsoft.VisualStudio.Code.Manifest") | .source' 2>/dev/null || echo "")
+
+                # Extract statistics
+                local downloads=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].statistics[]? | select(.statisticName == "install") | .value' 2>/dev/null || echo "0")
+                local rating=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].statistics[]? | select(.statisticName == "averagerating") | .value' 2>/dev/null || echo "0")
+
+                # Determine if this is a pre-release version
+                local is_prerelease="false"
+                [ "$prerelease" = "true" ] && is_prerelease="true"
+
+                # Create comprehensive metadata JSON (similar to Open VSX format)
+                cat > "$metadata_file" <<EOF
+{
+  "namespace": "$PUBLISHER",
+  "name": "$NAME",
+  "version": "$download_version",
+  "displayName": "$display_name",
+  "description": "$description",
+  "publishedBy": {
+    "loginName": "$PUBLISHER",
+    "fullName": "$publisher_display",
+    "homepage": "$publisher_domain",
+    "provider": "vscode-marketplace"
+  },
+  "verified": $publisher_verified,
+  "categories": $categories,
+  "tags": $tags,
+  "files": {
+    "icon": "$icon_url",
+    "readme": "$readme_url",
+    "changelog": "$changelog_url",
+    "license": "$license_url",
+    "manifest": "$manifest_url",
+    "download": "https://${PUBLISHER}.gallery.vsassets.io/_apis/public/gallery/publisher/${PUBLISHER}/extension/${NAME}/${download_version}/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage"
+  },
+  "engines": {
+    "vscode": "$engine"
+  },
+  "timestamp": "$last_updated",
+  "publishedDate": "$published_date",
+  "downloads": $downloads,
+  "averageRating": $rating,
+  "preRelease": $is_prerelease,
+  "extensionDependencies": $(echo "$ext_deps" | jq -R 'split(",") | map(select(. != ""))' 2>/dev/null || echo "[]"),
+  "extensionPack": $(echo "$ext_pack" | jq -R 'split(",") | map(select(. != ""))' 2>/dev/null || echo "[]")
+}
+EOF
+            fi
+
+        local version_label="stable"
+        [ "$prerelease" = "true" ] && version_label="latest"
+        echo -e "    ${GREEN}✓ Downloaded $version_label from VS Marketplace ($file_size)${NC}"
+        return 0
+    fi
+
+    # Fallback to Open VSX if VS Marketplace failed or for pre-release versions
+    if [ "$downloaded_from_vs" = "false" ]; then
+        local OVSX_CMD="ovsx get $extension"
+        [ "$download_version" != "latest" ] && OVSX_CMD="$OVSX_CMD -v $download_version"
+        [ -n "$target" ] && OVSX_CMD="$OVSX_CMD -t $target"
+        # Note: ovsx CLI doesn't support --pre-release flag, it downloads latest version
+
+        if (cd "$EXT_DIR" && eval $OVSX_CMD 2>&1 | grep -E "Downloading|Downloaded" || true); then
         # Find the downloaded file
         local downloaded_file=$(find "$EXT_DIR" -name "*.vsix" -type f -mmin -1 | head -1)
         if [ -n "$downloaded_file" ]; then
@@ -407,9 +578,6 @@ download_single_version() {
             fi
 
             # Determine correct target directory based on actual pre-release status
-            local actual_dir="$EXT_DIR"
-            local needs_move=false
-
             if [ "$is_prerelease" = "true" ]; then
                 # This is a pre-release version
                 if [ "$prerelease" = "false" ]; then
@@ -434,62 +602,6 @@ download_single_version() {
 
             return 0
         fi
-    fi
-
-    # Try VS Marketplace as fallback (doesn't support pre-release flag via URL)
-    if [ "$prerelease" = "false" ]; then
-        local VERSION_PATH="${download_version}"
-        [ "$VERSION_PATH" = "latest" ] && VERSION_PATH="latest"
-
-        local VSIX_URL="https://${PUBLISHER}.gallery.vsassets.io/_apis/public/gallery/publisher/${PUBLISHER}/extension/${NAME}/${VERSION_PATH}/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage"
-
-        local OUTPUT_FILE="$EXT_DIR/${extension}"
-        [ "$download_version" != "latest" ] && OUTPUT_FILE="${OUTPUT_FILE}-${download_version}"
-        [ -n "$target" ] && OUTPUT_FILE="${OUTPUT_FILE}@${target}"
-        OUTPUT_FILE="${OUTPUT_FILE}.vsix"
-
-        echo -e "    ${CYAN}Downloading from VS Marketplace...${NC}"
-        if curl -# -L -f "$VSIX_URL" -o "$OUTPUT_FILE" 2>&1 | tail -1; then
-            local file_size=$(du -h "$OUTPUT_FILE" | cut -f1)
-
-            # Try to download metadata from Open VSX or VS Marketplace API
-            local metadata_file="$EXT_DIR/metadata.json"
-            if ! ovsx get $extension $([ "$download_version" != "latest" ] && echo "-v $download_version") --metadata -o "$metadata_file" 2>/dev/null; then
-                # Get detailed metadata from VS Marketplace API
-                local vs_metadata=$(curl -s -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
-                  -H 'Content-Type: application/json' \
-                  -H 'Accept: application/json;api-version=3.0-preview.1' \
-                  -d "{
-                    \"filters\": [{
-                      \"criteria\": [{\"filterType\": 7, \"value\": \"$extension\"}],
-                      \"pageSize\": 1
-                    }],
-                    \"flags\": 914
-                  }" 2>/dev/null)
-
-                # Extract dependencies and other info
-                local ext_deps=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].properties[]? | select(.key == "Microsoft.VisualStudio.Code.ExtensionDependencies") | .value' 2>/dev/null || echo "")
-                local ext_pack=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].versions[0].properties[]? | select(.key == "Microsoft.VisualStudio.Code.ExtensionPack") | .value' 2>/dev/null || echo "")
-                local display_name=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].displayName // ""' 2>/dev/null || echo "")
-                local description=$(echo "$vs_metadata" | jq -r '.results[0].extensions[0].shortDescription // ""' 2>/dev/null || echo "")
-
-                # Create metadata JSON with dependencies
-                cat > "$metadata_file" <<EOF
-{
-  "namespace": "$PUBLISHER",
-  "name": "$NAME",
-  "version": "$download_version",
-  "displayName": "$display_name",
-  "description": "$description",
-  "preRelease": false,
-  "extensionDependencies": $(echo "$ext_deps" | jq -R 'split(",") | map(select(. != ""))' 2>/dev/null || echo "[]"),
-  "extensionPack": $(echo "$ext_pack" | jq -R 'split(",") | map(select(. != ""))' 2>/dev/null || echo "[]")
-}
-EOF
-            fi
-
-            echo -e "    ${GREEN}✓ Downloaded stable from VS Marketplace ($file_size)${NC}"
-            return 0
         fi
     fi
 
