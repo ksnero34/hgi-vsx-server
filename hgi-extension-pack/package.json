@@ -1,0 +1,43 @@
+{
+  "name": "hgi-dev-pack",
+  "displayName": "HGI Developer Extension Pack",
+  "description": "한화손해보험 내부 개발자를 위한 필수 Extension 모음",
+  "version": "0.0.1",
+  "publisher": "hgi",
+  "license": "MIT",
+  "icon": "hgi-icon.png",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Extension Packs"
+  ],
+  "keywords": [
+    "extension pack",
+    "hgi",
+    "development",
+    "hanwha"
+  ],
+  "extensionPack": [
+    "ms-python.python",
+    "ms-python.vscode-pylance",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "formulahendry.code-runner",
+    "golang.go",
+    "rust-lang.rust-analyzer",
+    "PKief.material-icon-theme",
+    "ms-vscode-remote.remote-wsl",
+    "redhat.java",
+    "vscjava.vscode-java-debug",
+    "vscjava.vscode-java-test",
+    "vscjava.vscode-maven",
+    "vscjava.vscode-spring-initializr",
+    "vmware.vscode-spring-boot",
+    "minpaper.hgi-vsext-jpaeditor"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/hgi-extension-pack"
+  }
+}
