@@ -183,6 +183,8 @@ services:
       context: ./server
     env_file:
       - .env
+    extra_hosts:
+      - 'auth.hwgeneralins.com:172.17.0.1'
     volumes:
       - ./data/openvsx-storage:/var/openvsx/storage
     depends_on:
@@ -202,6 +204,8 @@ services:
   webui:
     build:
       context: ./webui
+    extra_hosts:
+      - 'auth.hwgeneralins.com:172.17.0.1'
     networks:
       - dev_env
     depends_on:

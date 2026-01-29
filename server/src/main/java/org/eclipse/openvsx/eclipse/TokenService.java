@@ -27,6 +27,9 @@ import org.springframework.security.oauth2.core.OAuth2AccessToken.TokenType;
 import org.springframework.security.oauth2.core.OAuth2RefreshToken;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestTemplate;
 
@@ -118,18 +121,19 @@ public class TokenService {
         var tokenUri = reg.getProviderDetails().getTokenUri();
 
         var headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
+        headers.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
         headers.setAccept(List.of(MediaType.APPLICATION_JSON));
 
         var objectMapper = new ObjectMapper();
-        var data = objectMapper.createObjectNode()
-                .put("grant_type", "refresh_token")
-                .put("client_id", reg.getClientId())
-                .put("client_secret", reg.getClientSecret())
-                .put("refresh_token", token.refreshToken());
+
+        var data = new LinkedMultiValueMap<>();
+        data.add("grant_type", "refresh_token");
+        data.add("client_id", reg.getClientId());
+        data.add("client_secret", reg.getClientSecret());
+        data.add("refresh_token", token.refreshToken());
 
         try {
-            var request = new HttpEntity<>(objectMapper.writeValueAsString(data), headers);
+            var request = new HttpEntity<>(data, headers);
             var restTemplate = new RestTemplate();
             var response = restTemplate.postForObject(tokenUri, request, String.class);
             var root = objectMapper.readTree(response);
@@ -143,6 +147,9 @@ public class TokenService {
             var newToken = new OAuth2AccessToken(TokenType.BEARER, newTokenValue, issuedAt, expiresAt);
             var newRefreshToken = new OAuth2RefreshToken(newRefreshTokenValue, issuedAt);
             return Pair.of(newToken, newRefreshToken);
+        } catch (HttpClientErrorException.BadRequest exc) {
+            // keycloak sends a 400 status response if the refresh call failed
+            logger.warn("Eclipse token could not be refreshed: {}", exc.getMessage());
         } catch (RestClientException exc) {
             logger.error("Post request failed with URL: {}", tokenUri, exc);
         } catch (JsonProcessingException exc) {

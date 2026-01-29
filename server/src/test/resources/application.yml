@@ -12,6 +12,9 @@ spring:
     store-type: jdbc
     jdbc:
       initialize-schema: never
+  thymeleaf:
+    # explicitly disable thymeleaf view resolution
+    enabled: false
 
   security:
       oauth2:
@@ -29,7 +32,7 @@ org:
     job-scheduler:
       enabled: true
     background-job-server:
-      enabled: true
+      enabled: false
       worker-count: 1
     dashboard:
       enabled: false

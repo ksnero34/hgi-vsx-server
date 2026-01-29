@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-FROM gradle:jdk17 AS builder
+FROM gradle:jdk-25-and-25 AS builder
 
 # Copy sources
 WORKDIR /home/gradle
@@ -14,7 +14,7 @@ ENV CI=true
 RUN --mount=type=secret,id=dv-key,env=DEVELOCITY_ACCESS_KEY \
     ./gradlew --no-daemon assemble
 
-FROM eclipse-temurin:17.0.7_7-jdk
+FROM eclipse-temurin:25-jdk
 
 # Install runtime dependencies for health checks
 RUN apt-get update \
@@ -22,9 +22,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Create user openvsx and set up home directory
-RUN groupadd -r openvsx && useradd --no-log-init -r -g openvsx openvsx
-RUN mkdir -p /home/openvsx/server && chown -R openvsx:openvsx /home/openvsx
-RUN mkdir -p /var/openvsx/storage && chown -R openvsx:openvsx /var/openvsx
+RUN groupadd -r openvsx \
+    && useradd --no-log-init -r -g openvsx openvsx \
+    && mkdir -p /home/openvsx/server \
+    && chown -R openvsx:openvsx /home/openvsx
+
 USER openvsx
 WORKDIR /home/openvsx/server
 

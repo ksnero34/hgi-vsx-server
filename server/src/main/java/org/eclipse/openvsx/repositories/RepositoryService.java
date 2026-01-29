@@ -11,6 +11,7 @@ package org.eclipse.openvsx.repositories;
 
 import org.eclipse.openvsx.entities.*;
 import org.eclipse.openvsx.json.QueryRequest;
+import org.eclipse.openvsx.json.TargetPlatformVersionJson;
 import org.eclipse.openvsx.json.VersionTargetPlatformsJson;
 import org.eclipse.openvsx.util.ExtensionId;
 import org.eclipse.openvsx.util.NamingUtil;
@@ -47,7 +48,7 @@ public class RepositoryService {
     private final PersonalAccessTokenRepository tokenRepo;
     private final PersonalAccessTokenJooqRepository tokenJooqRepo;
     private final PersistedLogRepository persistedLogRepo;
-    private final AzureDownloadCountProcessedItemRepository downloadCountRepo;
+    private final DownloadCountProcessedItemRepository downloadCountRepo;
     private final ExtensionJooqRepository extensionJooqRepo;
     private final ExtensionVersionJooqRepository extensionVersionJooqRepo;
     private final FileResourceJooqRepository fileResourceJooqRepo;
@@ -72,7 +73,7 @@ public class RepositoryService {
             PersonalAccessTokenRepository tokenRepo,
             PersonalAccessTokenJooqRepository tokenJooqRepo,
             PersistedLogRepository persistedLogRepo,
-            AzureDownloadCountProcessedItemRepository downloadCountRepo,
+            DownloadCountProcessedItemRepository downloadCountRepo,
             ExtensionJooqRepository extensionJooqRepo,
             ExtensionVersionJooqRepository extensionVersionJooqRepo,
             FileResourceJooqRepository fileResourceJooqRepo,
@@ -168,6 +169,10 @@ public class RepositoryService {
 
     public ExtensionVersion findVersion(String version, String targetPlatform, String extensionName, String namespace) {
         return extensionVersionRepo.findByVersionAndTargetPlatformAndExtensionNameIgnoreCaseAndExtensionNamespaceNameIgnoreCase(version, targetPlatform, extensionName, namespace);
+    }
+
+    public ExtensionVersion findVersion(UserData user, String version, String targetPlatform, String extensionName, String namespace) {
+        return extensionVersionRepo.findByPublishedWithUserAndVersionAndTargetPlatformAndExtensionNameIgnoreCaseAndExtensionNamespaceNameIgnoreCase(user, version, targetPlatform, extensionName, namespace);
     }
 
     public Streamable<ExtensionVersion> findVersions(Extension extension) {
@@ -354,8 +359,12 @@ public class RepositoryService {
         return persistedLogRepo.findByTimestampAfterOrderByTimestampAsc(dateTime);
     }
 
-    public List<String> findAllSucceededAzureDownloadCountProcessedItemsByNameIn(List<String> names) {
-        return downloadCountRepo.findAllSucceededAzureDownloadCountProcessedItemsByNameIn(names);
+    public List<String> findAllSucceededDownloadCountProcessedItemsByStorageTypeAndNameIn(String storageType, List<String> names) {
+        return downloadCountRepo.findAllSucceededDownloadCountProcessedItemsByStorageTypeAndNameIn(storageType, names);
+    }
+
+    public List<String> findAllFailedDownloadCountProcessedItemsByStorageTypeAndNameIn(String storageType, List<String> names) {
+        return downloadCountRepo.findAllFailedDownloadCountProcessedItemsByStorageTypeAndNameIn(storageType, names);
     }
 
     public List<Extension> findActiveExtensionsByPublicId(Collection<String> publicIds, String... namespacesToExclude) {
@@ -438,8 +447,8 @@ public class RepositoryService {
         return extensionVersionRepo.findByVersionAndExtensionNameIgnoreCaseAndExtensionNamespaceNameIgnoreCase(version, extensionName, namespaceName);
     }
 
-    public int countVersions(Extension extension) {
-        return extensionVersionRepo.countByExtension(extension);
+    public int countVersions(String namespaceName, String extensionName) {
+        return extensionVersionJooqRepo.count(namespaceName, extensionName);
     }
 
     public Slice<MigrationItem> findNotMigratedItems(Pageable page) {
@@ -523,6 +532,10 @@ public class RepositoryService {
         return extensionVersionJooqRepo.findTargetPlatformsGroupedByVersion(extension);
     }
 
+    public List<VersionTargetPlatformsJson> findTargetPlatformsGroupedByVersion(Extension extension, UserData user) {
+        return extensionVersionJooqRepo.findTargetPlatformsGroupedByVersion(extension, user);
+    }
+
     public List<ExtensionVersion> findVersionsForUrls(Extension extension, String targetPlatform, String version) {
         return extensionVersionJooqRepo.findVersionsForUrls(extension, targetPlatform, version);
     }
@@ -563,12 +576,20 @@ public class RepositoryService {
         return extensionVersionJooqRepo.findLatest(user);
     }
 
+    public ExtensionVersion findLatestVersion(UserData user, String namespace, String extension) {
+        return extensionVersionJooqRepo.findLatest(user, namespace, extension);
+    }
+
     public List<String> findExtensionTargetPlatforms(Extension extension) {
         return extensionVersionJooqRepo.findDistinctTargetPlatforms(extension);
     }
 
     public void deactivateKeyPairs() {
         signatureKeyPairRepo.updateActiveSetFalse();
+    }
+
+    public int deactivateAccessTokens(UserData user) {
+        return tokenRepo.updateActiveSetFalse(user);
     }
 
     public List<String> findActiveExtensionNames(Namespace namespace) {
@@ -633,5 +654,9 @@ public class RepositoryService {
 
     public List<MigrationItem> findRemoveFileResourceTypeResourceMigrationItems(int offset, int limit) {
         return migrationItemJooqRepo.findRemoveFileResourceTypeResourceMigrationItems(offset, limit);
+    }
+
+    public boolean isDeleteAllVersions(String namespaceName, String extensionName, List<TargetPlatformVersionJson> targetVersions, UserData user) {
+        return extensionVersionJooqRepo.isDeleteAllVersions(namespaceName, extensionName, targetVersions, user);
     }
 }

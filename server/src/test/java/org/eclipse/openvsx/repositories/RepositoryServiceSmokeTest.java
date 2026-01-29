@@ -105,7 +105,8 @@ class RepositoryServiceSmokeTest {
                 () -> repositories.findAllActiveExtensions(),
                 () -> repositories.findAllPersistedLogs(),
                 () -> repositories.findAllReviews(extension),
-                () -> repositories.findAllSucceededAzureDownloadCountProcessedItemsByNameIn(STRING_LIST),
+                () -> repositories.findAllSucceededDownloadCountProcessedItemsByStorageTypeAndNameIn("storageType", STRING_LIST),
+                () -> repositories.findAllFailedDownloadCountProcessedItemsByStorageTypeAndNameIn("storageType", STRING_LIST),
                 () -> repositories.findBundledExtensionsReference(extension),
                 () -> repositories.findDependenciesReference(extension),
                 () -> repositories.findDownloadsByStorageTypeAndName("storageType", STRING_LIST),
@@ -133,7 +134,7 @@ class RepositoryServiceSmokeTest {
                 () -> repositories.findExtensions(LONG_LIST),
                 () -> repositories.findExtensions(userData),
                 () -> repositories.findFilesByType(List.of(extVersion), STRING_LIST),
-                () -> repositories.countVersions(extension),
+                () -> repositories.countVersions("namespaceName", "extensionName"),
                 () -> repositories.topMostDownloadedExtensions(1),
                 () -> repositories.countActiveAccessTokens(userData),
                 () -> repositories.topMostActivePublishingUsers(1),
@@ -214,7 +215,12 @@ class RepositoryServiceSmokeTest {
                 () -> repositories.findDeprecatedExtensions(extension),
                 () -> repositories.findLatestReplacement(1L, null, false, false),
                 () -> repositories.findNotMigratedItems(page),
-                () -> repositories.findRemoveFileResourceTypeResourceMigrationItems(0, 1)
+                () -> repositories.findRemoveFileResourceTypeResourceMigrationItems(0, 1),
+                () -> repositories.findTargetPlatformsGroupedByVersion(extension, userData),
+                () -> repositories.findVersion(userData,"version", "targetPlatform", "extensionName", "namespace"),
+                () -> repositories.findLatestVersion(userData, "namespaceName", "extensionName"),
+                () -> repositories.isDeleteAllVersions("namespaceName", "extensionName", Collections.emptyList(), userData),
+                () -> repositories.deactivateAccessTokens(userData)
         );
 
         // check that we did not miss anything
