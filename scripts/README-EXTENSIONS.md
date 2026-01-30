@@ -399,3 +399,32 @@ ovsx get ms-python.python --metadata | jq '.version, .displayName'
 - OVSX CLI: https://github.com/eclipse/openvsx/tree/master/cli
 - VSCode Extension API: https://code.visualstudio.com/api
 - Extension Marketplace: https://marketplace.visualstudio.com/vscode
+
+
+## Extension pack 만드는법
+기본 구조(최소):
+
+package.json에 categories: ["Extension Packs"]
+extensionPack 배열에 묶을 확장 ID들
+아이콘/README/CHANGELOG는 선택이지만 보통 포함
+예시(핵심만):
+
+{
+  "name": "my-pack",
+  "displayName": "My Extension Pack",
+  "version": "0.0.1",
+  "publisher": "myorg",
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["Extension Packs"],
+  "extensionPack": [
+    "ms-python.python",
+    "esbenp.prettier-vscode"
+  ]
+}
+VSIX 패키징:
+
+폴더 준비: package.json, README.md, LICENSE (선택)
+vsce로 패키징
+npm i -g @vscode/vsce
+cd hgi-extension-pack
+vsce package

@@ -1,3 +1,17 @@
 extensions/*
 downloaded_extensions.log
 data/*
+.github/dependabot.yml
+.github/release.yml
+.github/ISSUE_TEMPLATE/config.yml
+.github/workflows/main.yml
+.github/workflows/playwright.yml
+.github/workflows/publish-cli.yml
+.github/workflows/publish-webui.yml
+.github/workflows/release.yml
+.github/workflows/scorecard-analysis.yml
+.github/workflows/sonar.yml
+.github/workflows/main.yml
+.github/workflows/playwright.yml
+.github/workflows/release.yml
+.github/workflows/sonar.yml

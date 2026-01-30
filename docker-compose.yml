@@ -5,6 +5,8 @@ services:
     environment:
       - POSTGRES_USER=openvsx
       - POSTGRES_PASSWORD=openvsx
+    ports:
+      - "15432:5432"
     networks:
       dev_env:
         aliases:
@@ -181,6 +183,7 @@ services:
   server:
     build:
       context: ./server
+    image: harbor.hwgeneralins.com/hgi-vsx/openvsx-server:0.31.0
     env_file:
       - .env
     extra_hosts:
@@ -204,6 +207,7 @@ services:
   webui:
     build:
       context: ./webui
+    image: harbor.hwgeneralins.com/hgi-vsx/openvsx-webui:0.31.0
     extra_hosts:
       - 'auth.hwgeneralins.com:172.17.0.1'
     networks:

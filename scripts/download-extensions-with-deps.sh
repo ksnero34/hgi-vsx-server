@@ -18,6 +18,9 @@ EXTENSION_LIST="${1:-extensions.txt}"
 DOWNLOADED_FILE="./downloaded_extensions.log"
 DEPENDENCY_FILE="./dependencies.txt"
 
+# Platform selection ("win32-x64" or "universal")
+PLATFORM_MODE="${PLATFORM_MODE:-win32-x64}"
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -39,6 +42,21 @@ fi
 
 # Create download directory
 mkdir -p "$DOWNLOAD_DIR"
+
+# Determine default platforms
+DEFAULT_PLATFORMS=()
+case "$PLATFORM_MODE" in
+    win32-x64)
+        DEFAULT_PLATFORMS=("win32-x64")
+        ;;
+    universal)
+        DEFAULT_PLATFORMS=("")
+        ;;
+    *)
+        echo -e "${RED}Error: Invalid PLATFORM_MODE '$PLATFORM_MODE' (use 'win32-x64' or 'universal')${NC}"
+        exit 1
+        ;;
+esac
 
 # Install required tools
 if ! command -v ovsx &> /dev/null; then
@@ -240,8 +258,8 @@ download_extension() {
         # If platform specified, use only that
         platforms=("$target")
     else
-        # Download universal + linux + windows platforms
-        platforms=("" "linux-x64" "win32-x64")
+        # Default platform set (win32-x64 or universal)
+        platforms=("${DEFAULT_PLATFORMS[@]}")
     fi
 
     # Pre-search for stable version once (shared across all platforms)
@@ -256,6 +274,15 @@ download_extension() {
     for platform in "${platforms[@]}"; do
         local platform_label=""
         [ -n "$platform" ] && platform_label=" ($platform)"
+
+        # If a specific version is requested, download it once per platform
+        if [ "$version" != "latest" ]; then
+            echo -e "  ${CYAN}→ Downloading${platform_label}...${NC}"
+            if download_single_version "$extension" "$version" "$platform" "false" "true" "$version"; then
+                any_success=true
+            fi
+            continue
+        fi
 
         # Try stable version first (skip if already failed on first platform)
         if [ "$stable_version_checked" = "false" ] || [ -n "$stable_version_found" ]; then
@@ -282,40 +309,42 @@ download_extension() {
     done
 
     # Check if we should also download latest (pre-release) version
-    local should_download_latest=false
-    if [ "$stable_downloaded" = "false" ] && [ "$stable_version_checked" = "true" ] && [ -z "$stable_version_found" ]; then
-        # No stable version exists at all
-        echo -e "  ${YELLOW}→ No stable version available, downloading latest version...${NC}"
-        should_download_latest=true
-    elif [ "$stable_downloaded" = "true" ] && [ -n "$stable_version_found" ]; then
-        # We downloaded a stable version, check if there's a newer pre-release
-        # Get the actual latest version number
-        local latest_version=$(curl -s "https://marketplace.visualstudio.com/items?itemName=$extension" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4 2>/dev/null || echo "")
-        if [ -z "$latest_version" ]; then
-            # Try API approach
-            latest_version=$(curl -s -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
-              -H 'Content-Type: application/json' \
-              -H 'Accept: application/json;api-version=3.0-preview.1' \
-              -d "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"$extension\"}],\"pageSize\":1}],\"flags\":914}" 2>/dev/null | \
-              jq -r '.results[0].extensions[0].versions[0].version' 2>/dev/null || echo "")
-        fi
-
-        if [ -n "$latest_version" ] && [ "$latest_version" != "$stable_version_found" ]; then
-            echo -e "  ${BLUE}→ Found newer pre-release version: $latest_version (stable: $stable_version_found)${NC}"
+    if [ "$download_prerelease" = "true" ] && [ "$version" = "latest" ]; then
+        local should_download_latest=false
+        if [ "$stable_downloaded" = "false" ] && [ "$stable_version_checked" = "true" ] && [ -z "$stable_version_found" ]; then
+            # No stable version exists at all
+            echo -e "  ${YELLOW}→ No stable version available, downloading latest version...${NC}"
             should_download_latest=true
-        fi
-    fi
-
-    if [ "$should_download_latest" = "true" ]; then
-        for platform in "${platforms[@]}"; do
-            local platform_label=""
-            [ -n "$platform" ] && platform_label=" ($platform)"
-
-            echo -e "  ${CYAN}→ Downloading latest${platform_label}...${NC}"
-            if download_single_version "$extension" "$version" "$platform" "true" "true" ""; then
-                any_success=true
+        elif [ "$stable_downloaded" = "true" ] && [ -n "$stable_version_found" ]; then
+            # We downloaded a stable version, check if there's a newer pre-release
+            # Get the actual latest version number
+            local latest_version=$(curl -s "https://marketplace.visualstudio.com/items?itemName=$extension" | grep -o '"version":"[^"]*"' | head -1 | cut -d'"' -f4 2>/dev/null || echo "")
+            if [ -z "$latest_version" ]; then
+                # Try API approach
+                latest_version=$(curl -s -X POST 'https://marketplace.visualstudio.com/_apis/public/gallery/extensionquery' \
+                  -H 'Content-Type: application/json' \
+                  -H 'Accept: application/json;api-version=3.0-preview.1' \
+                  -d "{\"filters\":[{\"criteria\":[{\"filterType\":7,\"value\":\"$extension\"}],\"pageSize\":1}],\"flags\":914}" 2>/dev/null | \
+                  jq -r '.results[0].extensions[0].versions[0].version' 2>/dev/null || echo "")
             fi
-        done
+
+            if [ -n "$latest_version" ] && [ "$latest_version" != "$stable_version_found" ]; then
+                echo -e "  ${BLUE}→ Found newer pre-release version: $latest_version (stable: $stable_version_found)${NC}"
+                should_download_latest=true
+            fi
+        fi
+
+        if [ "$should_download_latest" = "true" ]; then
+            for platform in "${platforms[@]}"; do
+                local platform_label=""
+                [ -n "$platform" ] && platform_label=" ($platform)"
+
+                echo -e "  ${CYAN}→ Downloading latest${platform_label}...${NC}"
+                if download_single_version "$extension" "$version" "$platform" "true" "true" ""; then
+                    any_success=true
+                fi
+            done
+        fi
     fi
 
     if [ "$any_success" = "false" ]; then
@@ -449,6 +478,9 @@ download_single_version() {
     [ "$VERSION_PATH" = "latest" ] && VERSION_PATH="latest"
 
     local VSIX_URL="https://${PUBLISHER}.gallery.vsassets.io/_apis/public/gallery/publisher/${PUBLISHER}/extension/${NAME}/${VERSION_PATH}/assetbyname/Microsoft.VisualStudio.Services.VSIXPackage"
+    if [ -n "$target" ]; then
+        VSIX_URL="${VSIX_URL}?targetPlatform=${target}"
+    fi
 
     local OUTPUT_FILE="$EXT_DIR/${extension}"
     [ "$download_version" != "latest" ] && OUTPUT_FILE="${OUTPUT_FILE}-${download_version}"
