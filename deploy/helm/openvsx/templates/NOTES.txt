@@ -1,0 +1,18 @@
+OpenVSX is deployed.
+
+Proxy service:
+  Name: {{ include "hgi-vsx.fullname" . }}-proxy
+  Type: {{ .Values.proxy.service.type }}
+
+If you are in a closed network, load images before install, for example:
+  # containerd
+  ctr -n k8s.io images import dist/harbor.hwgeneralins.com_hgi-vsx_openvsx-server_0.31.0.tar.gz
+  ctr -n k8s.io images import dist/harbor.hwgeneralins.com_hgi-vsx_openvsx-webui_0.31.0.tar.gz
+  ctr -n k8s.io images import dist/harbor.hwgeneralins.com_hgi-vsx_openvsx-cli_0.31.0.tar.gz
+
+Update values.yaml for:
+  - server.env.PUBLIC_BASE_URL and server.env.OVSX_REGISTRY_URL to your external URL
+  - server.secretEnv.SPRING_SECURITY_OAUTH2_CLIENT_REGISTRATION_CUSTOM_CLIENT_SECRET
+  - proxy.tls (set existingSecret or provide crt/key)
+
+Elasticsearch requires vm.max_map_count=262144 on nodes. Set it on the node or enable elasticsearch.sysctlInit.enabled.

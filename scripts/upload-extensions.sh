@@ -77,6 +77,46 @@ SKIPPED=0
 echo "Scanning for extensions..."
 echo ""
 
+# Extract publisher/name/version from a VSIX file when path structure is missing
+extract_vsix_metadata() {
+    local vsix_file="$1"
+    local manifest=""
+
+    if ! command -v unzip &> /dev/null; then
+        return 1
+    fi
+
+    manifest=$(unzip -p "$vsix_file" "extension/package.json" 2>/dev/null || true)
+    if [ -z "$manifest" ]; then
+        return 1
+    fi
+
+    if command -v python3 &> /dev/null; then
+        echo "$manifest" | python3 - <<'PY'
+import json, sys
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+publisher = data.get("publisher", "")
+name = data.get("name", "")
+version = data.get("version", "")
+preview = data.get("preview", False)
+if not publisher or not name:
+    sys.exit(1)
+sys.stdout.write(f"{publisher}|{name}|{version}|{'true' if preview else 'false'}")
+PY
+        return $?
+    fi
+
+    if command -v jq &> /dev/null; then
+        echo "$manifest" | jq -r '(.publisher // "") + "|" + (.name // "") + "|" + (.version // "") + "|" + ((.preview // false) | tostring)'
+        return $?
+    fi
+
+    return 1
+}
+
 # Build a list of unique extension versions to upload
 # Group by publisher/extension/version/release-type and prefer universal over platform-specific
 declare -A extension_files
@@ -96,24 +136,42 @@ while IFS= read -r vsix_file; do
 
     FILENAME=$(basename "$vsix_file")
     DIR_PATH=$(dirname "$vsix_file")
-    RELEASE_TYPE=$(basename "$DIR_PATH")  # stable or pre-release
+    RELEASE_TYPE=$(basename "$DIR_PATH")  # stable or pre-release (if structured)
 
-    # Check if this is platform-specific or universal
-    PARENT_DIR=$(dirname "$DIR_PATH")
-    PARENT_NAME=$(basename "$PARENT_DIR")
+    # If the VSIX is directly under root, extract metadata from the file
+    if [[ "$RELATIVE_PATH" != */* ]]; then
+        META=$(extract_vsix_metadata "$vsix_file" || true)
+        if [ -z "$META" ]; then
+            echo -e "${YELLOW}Skipping $FILENAME: cannot read publisher/name from VSIX (need unzip + python3/jq)${NC}"
+            SKIPPED=$((SKIPPED + 1))
+            continue
+        fi
 
-    if [[ "$PARENT_NAME" =~ ^(linux-x64|win32-x64|darwin-x64|alpine-x64|web)$ ]]; then
-        # Platform-specific
-        PLATFORM="$PARENT_NAME"
-        VERSION_DIR=$(dirname "$PARENT_DIR")
-    else
-        # Universal
+        IFS='|' read -r PUBLISHER EXTENSION META_VERSION META_PREVIEW <<< "$META"
         PLATFORM="universal"
-        VERSION_DIR="$PARENT_DIR"
+        RELEASE_TYPE="stable"
+        [ "$META_PREVIEW" = "true" ] && RELEASE_TYPE="pre-release"
+        VERSION_KEY="$META_VERSION"
+    else
+        # Check if this is platform-specific or universal
+        PARENT_DIR=$(dirname "$DIR_PATH")
+        PARENT_NAME=$(basename "$PARENT_DIR")
+
+        if [[ "$PARENT_NAME" =~ ^(linux-x64|win32-x64|darwin-x64|alpine-x64|web)$ ]]; then
+            # Platform-specific
+            PLATFORM="$PARENT_NAME"
+            VERSION_DIR=$(dirname "$PARENT_DIR")
+        else
+            # Universal
+            PLATFORM="universal"
+            VERSION_DIR="$PARENT_DIR"
+        fi
+
+        VERSION_KEY="$VERSION_DIR"
     fi
 
     # Create unique key for this extension version
-    KEY="$PUBLISHER/$EXTENSION/$VERSION_DIR/$RELEASE_TYPE"
+    KEY="$PUBLISHER/$EXTENSION/$VERSION_KEY/$RELEASE_TYPE"
 
     # Prefer universal over platform-specific
     if [ -z "${extension_files[$KEY]}" ] || [ "$PLATFORM" = "universal" ]; then

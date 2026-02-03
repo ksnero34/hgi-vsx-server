@@ -1,0 +1,96 @@
+{{- if .Values.elasticsearch.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "hgi-vsx.fullname" . }}-elasticsearch
+  labels:
+    {{- include "hgi-vsx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: elasticsearch
+spec:
+  serviceName: {{ include "hgi-vsx.fullname" . }}-elasticsearch
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "hgi-vsx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: elasticsearch
+  template:
+    metadata:
+      labels:
+        {{- include "hgi-vsx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: elasticsearch
+    spec:
+{{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+{{- toYaml .Values.imagePullSecrets | nindent 8 }}
+{{- end }}
+{{- if .Values.elasticsearch.sysctlInit.enabled }}
+      initContainers:
+        - name: sysctl
+          image: "{{ .Values.elasticsearch.sysctlInit.image.repository }}:{{ .Values.elasticsearch.sysctlInit.image.tag }}"
+          imagePullPolicy: {{ .Values.elasticsearch.sysctlInit.image.pullPolicy }}
+          command:
+            - sh
+            - -c
+            - sysctl -w vm.max_map_count=262144
+          securityContext:
+            privileged: true
+{{- end }}
+      containers:
+        - name: elasticsearch
+          image: "{{ .Values.elasticsearch.image.repository }}:{{ .Values.elasticsearch.image.tag }}"
+          imagePullPolicy: {{ .Values.elasticsearch.image.pullPolicy }}
+          env:
+{{- range $key, $value := .Values.elasticsearch.env }}
+            - name: {{ $key }}
+              value: {{ $value | quote }}
+{{- end }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.elasticsearch.service.port }}
+          volumeMounts:
+            - name: data
+              mountPath: /usr/share/elasticsearch/data
+          livenessProbe:
+            httpGet:
+              path: /_cluster/health?local=true
+              port: http
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /_cluster/health?wait_for_status=yellow&timeout=1s
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+{{- toYaml .Values.elasticsearch.resources | nindent 12 }}
+{{- if not .Values.elasticsearch.persistence.enabled }}
+      volumes:
+        - name: data
+          emptyDir: {}
+{{- end }}
+      nodeSelector:
+{{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+{{- toYaml .Values.tolerations | nindent 8 }}
+      affinity:
+{{- toYaml .Values.affinity | nindent 8 }}
+{{- if .Values.elasticsearch.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes:
+{{- toYaml .Values.elasticsearch.persistence.accessModes | nindent 10 }}
+        resources:
+          requests:
+            storage: {{ .Values.elasticsearch.persistence.size | quote }}
+{{- if .Values.elasticsearch.persistence.storageClassName }}
+        storageClassName: {{ .Values.elasticsearch.persistence.storageClassName | quote }}
+{{- end }}
+{{- end }}
+{{- end }}

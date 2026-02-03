@@ -1,0 +1,80 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hgi-vsx.fullname" . }}-proxy
+  labels:
+    {{- include "hgi-vsx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  replicas: {{ .Values.proxy.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hgi-vsx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: proxy
+  template:
+    metadata:
+      labels:
+        {{- include "hgi-vsx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: proxy
+    spec:
+{{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+{{- toYaml .Values.imagePullSecrets | nindent 8 }}
+{{- end }}
+{{- if .Values.proxy.hostAliases }}
+      hostAliases:
+{{- toYaml .Values.proxy.hostAliases | nindent 8 }}
+{{- end }}
+      containers:
+        - name: proxy
+          image: "{{ .Values.proxy.image.repository }}:{{ .Values.proxy.image.tag }}"
+          imagePullPolicy: {{ .Values.proxy.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.proxy.service.ports.http }}
+{{- if .Values.proxy.tls.enabled }}
+            - name: https
+              containerPort: {{ .Values.proxy.service.ports.https }}
+{{- end }}
+          volumeMounts:
+            - name: config
+              mountPath: /etc/nginx/nginx.conf
+              subPath: nginx.conf
+{{- if .Values.proxy.tls.enabled }}
+            - name: tls
+              mountPath: /etc/nginx/ssl
+              readOnly: true
+{{- end }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+{{- toYaml .Values.proxy.resources | nindent 12 }}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "hgi-vsx.fullname" . }}-proxy
+{{- if .Values.proxy.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ if .Values.proxy.tls.existingSecret }}{{ .Values.proxy.tls.existingSecret }}{{ else }}{{ include "hgi-vsx.fullname" . }}-proxy-tls{{ end }}
+{{- end }}
+      nodeSelector:
+{{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+{{- toYaml .Values.tolerations | nindent 8 }}
+      affinity:
+{{- toYaml .Values.affinity | nindent 8 }}

@@ -1,0 +1,6 @@
+apiVersion: v2
+name: hgi-vsx
+description: Helm chart for HGI OpenVSX registry
+type: application
+version: 0.1.0
+appVersion: "0.31.0"

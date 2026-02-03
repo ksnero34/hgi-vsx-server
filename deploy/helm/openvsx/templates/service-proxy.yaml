@@ -1,0 +1,27 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hgi-vsx.fullname" . }}-proxy
+  labels:
+    {{- include "hgi-vsx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy
+spec:
+  type: {{ .Values.proxy.service.type }}
+  ports:
+    - name: http
+      port: {{ .Values.proxy.service.ports.http }}
+      targetPort: http
+{{- with .Values.proxy.service.nodePorts.http }}
+      nodePort: {{ . }}
+{{- end }}
+{{- if .Values.proxy.tls.enabled }}
+    - name: https
+      port: {{ .Values.proxy.service.ports.https }}
+      targetPort: https
+{{- with .Values.proxy.service.nodePorts.https }}
+      nodePort: {{ . }}
+{{- end }}
+{{- end }}
+  selector:
+    {{- include "hgi-vsx.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: proxy

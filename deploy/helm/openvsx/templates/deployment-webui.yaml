@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hgi-vsx.fullname" . }}-webui
+  labels:
+    {{- include "hgi-vsx.labels" . | nindent 4 }}
+    app.kubernetes.io/component: webui
+spec:
+  replicas: {{ .Values.webui.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "hgi-vsx.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: webui
+  template:
+    metadata:
+      labels:
+        {{- include "hgi-vsx.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: webui
+    spec:
+{{- if .Values.imagePullSecrets }}
+      imagePullSecrets:
+{{- toYaml .Values.imagePullSecrets | nindent 8 }}
+{{- end }}
+{{- if .Values.webui.hostAliases }}
+      hostAliases:
+{{- toYaml .Values.webui.hostAliases | nindent 8 }}
+{{- end }}
+      containers:
+        - name: webui
+          image: "{{ .Values.webui.image.repository }}:{{ .Values.webui.image.tag }}"
+          imagePullPolicy: {{ .Values.webui.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.webui.service.port }}
+          livenessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          readinessProbe:
+            httpGet:
+              path: /
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 6
+          resources:
+{{- toYaml .Values.webui.resources | nindent 12 }}
+      nodeSelector:
+{{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+{{- toYaml .Values.tolerations | nindent 8 }}
+      affinity:
+{{- toYaml .Values.affinity | nindent 8 }}

@@ -234,6 +234,7 @@ services:
   cli:
     build:
       context: ./cli
+    image: harbor.hwgeneralins.com/hgi-vsx/openvsx-cli:0.31.0
     command: ["--help"]
     env_file:
       - .env
